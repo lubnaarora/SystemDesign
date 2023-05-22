@@ -1,0 +1,64 @@
+package com.systemdesign.RateLimiter;
+
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class RateLimiter {
+    private final int limit;
+    private final int windowInSeconds;
+    private final Map<String, Map<Long, Integer>> counters;
+
+    public RateLimiter(int limit, int windowInSeconds) {
+        this.limit = limit;
+        this.windowInSeconds = windowInSeconds;
+        this.counters = new ConcurrentHashMap<>();
+    }
+
+    public synchronized boolean allowRequest(String key) {
+        long currentTimestamp = System.currentTimeMillis() / 1000;
+        Map<Long, Integer> keyCounters = counters.get(key);
+
+        if (keyCounters == null) {
+            keyCounters = new ConcurrentHashMap<>();
+            counters.put(key, keyCounters);
+        }
+
+        // Clear expired entries
+        long expiredTimestamp = currentTimestamp - windowInSeconds;
+        keyCounters.entrySet().removeIf(entry -> entry.getKey() <= expiredTimestamp);
+
+        // Check if limit is reached
+        int count = keyCounters.values().stream().mapToInt(Integer::intValue).sum();
+        if (count >= limit) {
+            return false;
+        }
+
+        // Update the counter
+        keyCounters.put(currentTimestamp, keyCounters.getOrDefault(currentTimestamp, 0) + 1);
+
+        return true;
+    }
+
+    public static void main(String[] args) {
+        RateLimiter rateLimiter = new RateLimiter(100, 60); // Limit of 100 requests per minute
+
+        // Simulating requests
+        for (int i = 1; i <= 150; i++) {
+            String key = "user1"; // Assuming each request is associated with a user
+
+            if (rateLimiter.allowRequest(key)) {
+                System.out.println("Request " + i + ": Allowed");
+            } else {
+                System.out.println("Request " + i + ": Denied");
+            }
+
+            try {
+                Thread.sleep(100); // Sleep for 100 milliseconds between requests
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
